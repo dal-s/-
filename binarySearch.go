@@ -7,7 +7,20 @@ import (
     "bufio"
     "strings"
     "strconv"
+    "sync/atomic"
+    "time"
+    "reflect"
+    "runtime"
 )
+/*
+Function:实现多线程二分法查找算法
+
+TODO-LIST:
+1.多线程读取数据
+2.done函数在全文查找失败时会继续阻塞 [Done]
+3.当其中一个线程返回查找结果时，通知其他线程结束运行
+4.排序算法优化
+*/
 
 var p = fmt.Println
 type Person struct {
@@ -28,6 +41,22 @@ func (a Byage) Swap(i, j int){
 }
 func (a Byage) Less(i, j int) bool { 
     return a[i].Age < a[j].Age
+}
+
+type ReadFunc func() [] Person
+
+func getFunctionName(i interface{}) string {
+    return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+}
+
+func runTime(f ReadFunc ) ReadFunc {
+    return func() []Person {
+        defer func(t time.Time) {
+            fmt.Printf("--- Time Elapsed (%s):%v ---\n",getFunctionName(f),time.Since(t))
+        }(time.Now())
+
+        return f()
+    }
 }
 
 //func rank(key int,i []int) int {
@@ -56,14 +85,19 @@ func done() int {
                 if c != -1 {
                     return c
                 }
+            default :
+                if atomic.LoadUint64(&finish_num) == threads{
+                    return -1
+                }
         }
     }
-    return -1
 }
 
-func readFile() map[string] string {
-    var per=make(map[string] string)
+func readFile() []Person {
     var arr []string
+    tmp :=[10]Person{}
+    data := []Person {}
+
     f,err := os.Open("/home/mart_coo/lijianping1/1.dat")
     if err != nil {
         p("read file error! ",err)
@@ -80,31 +114,32 @@ func readFile() map[string] string {
         }
 
         arr =strings.Split(a," ")
-        per[arr[0]]=arr[1]
+
+        tmp[0].Name=arr[0]
+        tmp[0].Age,_=strconv.Atoi(strings.Replace(arr[1],"\n","",-1))
+        data=append(data,tmp[0])
     }
-    return per
+    return data
 }
 
-const threads=10
+const threads=3
 var succ =make(chan int)
+var finish_num uint64
 
 func main() {
     
     defer close(succ)
 
-    r :=readFile()
-    tmp :=[10]Person{}
-    per := []Person {}
+    per:=runTime(readFile)() //7s
 
-    for k,v := range r {
-        tmp[0].Name=k
-        tmp[0].Age,_=strconv.Atoi(strings.Replace(v,"\n","",-1))
-        per=append(per,tmp[0])
-    }
+    //r :=readFile()
+
+    t:=time.Now()
+    sort.Sort(Byage(per)) //5s
+    p("Sort use:",time.Since(t))
+
     //p(per)
-    //sort.Sort(Byage(per))
-    //p(per)
-    //p(rank(59361974761705217,Byage(per)))
+    //p(rank(32939,Byage(per)))
     
     len_data := len(per)
 
@@ -114,15 +149,12 @@ func main() {
         step=len_data
     }
 
-    p(step)
-    p(len_data)
-
     for i:=0; i<=len_data-step;i=i+step {
         go func(data Byage) {
             sort.Sort(Byage(data))
-            //p("start:",data)
-            ret :=rank(59361974761705217,Byage(data))
+            ret :=rank(1,Byage(data))
             succ <- ret
+            atomic.AddUint64(&finish_num,1)
         }(per[i:i+step])
     }
 
