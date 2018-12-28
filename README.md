@@ -1,2 +1,2 @@
-# -use galang overwrite algoithms
+# use galang overwrite algoithms
 用golang重写算法中的所有案例
